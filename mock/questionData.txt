@@ -1,0 +1,22 @@
+extract the information from this URL: https://en.wikipedia.org/wiki/India
+
+Answer the following questions and respond with a JSON array of strings containing the answer.
+
+1.What is the estimated population of India as of 2023, and what is its population density?
+2.How did India's economy evolve after its independence in 1947?
+3.What are the major tectonic events that shaped India's geography?
+4.What are the key demographic characteristics of India?
+5.How did the partition of British India in 1947 affect the subcontinent?
+6.Generate the image for demographic characteristics of India: PNG file encoded as base64?
+7.Describe the Summary of candidate profile summary ?
+
+Here is a sample Answer:
+If the answer is not matched just send the actual error in Answer property
+
+```json
+{
+  "question": "33~10",
+  "Answer": "CRL MP(MD)/4399/2023 of Vinoth Vs The Inspector of Police"
+}
+'''
+

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+</head>
+
+<body>
+    <div class="action-row">
+        <div class="file">
+            <div class="upload-wrapper">
+                <input class="file-input" id="fileUpload" type="file" accept=".csv, .xls, .xlsx, .doc, .docx, .txt"
+                    onChange="uploadFile(event)" multiple="true" />
+                <label for="fileUpload" class="upload-button">Upload files ✙</label>
+            </div>
+        </div>
+        <div>
+            <button class="submit-button" onclick="submitQuestion()">ASK ➤</button>
+        </div>
+    </div>
+    <div id="selectedOutput">
+        <label id="selectedFile" class="selectedFile"></label>
+    </div>
+    <div id="loader" class="loader-container">
+        <span class="loader-text">Thinking...</span>
+    </div>
+
+    <div id="result-table" class="table-output"></div>
+
+
+    <div id="resultSection">
+        <span class="query1">Generated OutPut:</span>
+        <div class="query-card">
+            <div id="answereContainer" class="query"></div>
+        </div>
+    </div>
+
+    <script src="./index.js"></script>
+</body>
+
+</html>
