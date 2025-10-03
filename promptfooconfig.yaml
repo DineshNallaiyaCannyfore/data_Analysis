@@ -1,0 +1,35 @@
+version: 1
+description: "Test matplotlib-to-base64 API using Gemini Flash 2.5 via ngrok"
+
+providers:
+  - id: google:gemini-2.5-flash
+    config:
+      apiKey: "AIzaSyAto7z8ff4DnyXMZQHYiU9ubu0lsrgwt-o"
+      url: "https://2fb2d639a325.ngrok-free.app/api/getData"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        prompt: "{{prompt}}"
+
+tests:
+  - vars:
+      prompt: "5.How did the partition of British India in 1947 affect the subcontinent?"
+    assert:
+      - type: contains
+        value: "independent nations"
+  - vars:
+      prompt: "6.Generate the char for demographic characteristics of India: using matplotlib code?"
+    assert:
+      - type: contains
+        value: "python"
+  - vars:
+      prompt: "7.Describe the Summary of candidate profile summary?"
+    assert:
+      - type: contains
+        value: "summary"
+  - vars:
+      prompt: "7.Give me the summary of the sun ?"
+    assert:
+      - type: contains
+        value: "solar system"

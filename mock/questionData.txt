@@ -7,11 +7,13 @@ Answer the following questions and respond with a JSON array of strings containi
 3.What are the major tectonic events that shaped India's geography?
 4.What are the key demographic characteristics of India?
 5.How did the partition of British India in 1947 affect the subcontinent?
-6.Generate the image for demographic characteristics of India: PNG file encoded as base64?
+6.Generate the char for demographic characteristics of India: using matplotlib code?
 7.Describe the Summary of candidate profile summary ?
+8.Give me the summary of the sun ?
 
 Here is a sample Answer:
 If the answer is not matched just send the actual error in Answer property
+
 
 ```json
 {

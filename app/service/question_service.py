@@ -1,35 +1,30 @@
-import json
 import tempfile
 import httpx
 import duckdb
 import numpy as np
-import fitz
 import pandas as pd
 import docx
-import fitz 
-import asyncio
+import re
 import os
-import sentence_transformers
-from typing import Any, Dict, List
+from typing import  List
 from fastapi import File, UploadFile
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 from langchain.prompts import ChatPromptTemplate
-from langchain_community.document_loaders import WebBaseLoader
-import re
-from langchain_community.document_loaders import UnstructuredURLLoader
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores.duckdb import DuckDB
-
+from langchain.prompts import ChatPromptTemplate
 from langchain.schema import Document 
 from bs4 import BeautifulSoup
-model = SentenceTransformer('all-MiniLM-L6-v2') 
-print(sentence_transformers.__version__)
+import matplotlib.pyplot as plt
+import base64
+import io
+import easyocr
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
 # Set Gemini key
 os.environ["GOOGLE_API_KEY"] = "AIzaSyAto7z8ff4DnyXMZQHYiU9ubu0lsrgwt-o"
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
@@ -42,6 +37,7 @@ async def extractText(files: List[UploadFile]) -> str:
     file_text = ""
     for f in files:
         suffix = f.filename.split(".")[-1].lower()
+        print("suffix",suffix,f.filename.split(".")[-1].lower())
         if suffix == "txt":
             file_text = (await f.read()).decode("utf-8")
             query_text += file_text
@@ -74,9 +70,17 @@ async def extractText(files: List[UploadFile]) -> str:
                 tmp_path = tmp.name
             doc = docx.Document(tmp_path)
             file_text = "\n".join([para.text for para in doc.paragraphs])
+        elif suffix in ["jpg"]:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(await f.read())
+                tmp_path = tmp.name
+                reader = easyocr.Reader(['en'])  # loads English model
+                result = reader.readtext(tmp_path)
+                texts = [res[1] for res in result]
+                print("imgText:", " ".join(texts))
+            file_text = "\n".join(texts)
 
         if suffix != "txt" :
-             print("DDD", file_text)
              await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
 
     return {
@@ -84,7 +88,6 @@ async def extractText(files: List[UploadFile]) -> str:
             "fileTypeList": file_text
         }
     
-
 def getURLS(text):
     url_pattern = r'https?://[^\s]+'
     urls = re.findall(url_pattern, text)
@@ -99,7 +102,7 @@ async def extract_text_from_urls(url_list):
                 soup = BeautifulSoup(response.text, "html.parser")
                 text = " ".join([p.get_text() for p in soup.find_all("p")])
                 all_text += text + "\n"
-        print("all_text =", all_text)
+        
         await embed_chunks_in_memory_duckdb(all_text, 'webURLTest', 'txt')
         return all_text
 
@@ -131,24 +134,55 @@ async def embed_chunks_in_memory_duckdb(text: str,metadata,type):
             VECTOR_STORE.add_documents(documents)
         return VECTOR_STORE
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return {
             "status": "error",
             "error": str(e)
         }
+        
+async def vector_search(query: str, k: int):
+    global VECTOR_STORE
+    if isinstance(query, dict):
+        query = query.get("query", "") 
+
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "Query must be a non-empty string"}
+
+    results = VECTOR_STORE.similarity_search(query, k=k)
+
+    return [
+        {
+            "content": doc.page_content,
+            "metadata": doc.metadata
+        }
+        for doc in results
+    ]
+
+async def generate_questions(query: str):
+    docs = await vector_search(query,30)
+    context = "\n\n".join([d["content"] for d in docs])
+    prompt = ChatPromptTemplate.from_template("""
+        You are an expert assistant.
+        Use the following context to answer the question.
    
-async def generate_questions(query: str ,opt: str = None):
-    global CON
-    retriever = VECTOR_STORE.as_retriever(search_kwargs={"k": 30},)
-    qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
-    result = qa.invoke(query)
-    answer = result.get("result")
-    print("#######",answer)
-    return answer
-            
+        Context:
+        {context}
+
+        Question:
+        {question}
+        If you find any chart, image on the question then return valid Python matplotlib code using "df",
+         
+        """)
+
+    chain = prompt | llm
+    response = await chain.ainvoke({
+        "context": context,
+        "question": query
+    })
+    withImageRes = extract_and_generate_base64(response.content)
+    print("--------",withImageRes)
+    return withImageRes
+
 async def handleFileUpload(files: List[UploadFile] = File(...)) :
-    print("file",files)
     if not files:
         return {
             "status": 200,
@@ -168,9 +202,45 @@ async def handleFileUpload(files: List[UploadFile] = File(...)) :
             "error": "Given file doesn't have data source, please attach url or other doc",
         }
     webtext = await extract_text_from_urls(urlResult)
-    result = await generate_questions(extractedText,webtext)
+    # doc = await vector_search(extractedText)
+    result = await generate_questions(extractedText)
+    # result = await generate_questions(extractedText,webtext)
     return {
         "status": "200",
         "generated_answer": result
     }
-    
+
+def extract_and_generate_base64(response_text):
+    code_blocks = re.findall(r"```python(.*?)```", response_text, re.DOTALL)
+
+    for code in code_blocks:
+        try:
+            code_clean = code.strip()
+            code_clean = code_clean.encode("utf-8").decode("unicode_escape")
+            code_clean = re.sub(r"plt\.show\(\)", "", code_clean)
+            local_ns = {}
+            exec(code_clean, {"plt": plt, "pd": pd}, local_ns)
+            fig = plt.gcf()
+            buffer = io.BytesIO()
+            dpi = 150
+            fig.savefig(buffer, format="png", dpi=dpi)
+            buffer.seek(0)
+            while buffer.getbuffer().nbytes > 100_000:
+                dpi -= 10
+                buffer = io.BytesIO()
+                fig.savefig(buffer, format="png", dpi=dpi)
+                buffer.seek(0)
+                if dpi < 50:
+                    break
+            img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
+            plt.close(fig)
+            response_text = response_text.replace(
+                f"```python{code}```",
+                f"![Chart](data:image/png;base64,{img_base64})"
+            )
+
+        except Exception as e:
+            print("Error generating plot:", e, "\nCode was:\n", code_clean)
+
+    return response_text
+   

@@ -1,9 +1,8 @@
 from typing import List
-from fastapi import APIRouter, Depends, File, Form, Query, Response,HTTPException, UploadFile
+from fastapi import APIRouter, File,HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from app.service.question_service import handleFileUpload
 from fastapi import status
-from app.utils.security import get_current_user
 query_router = APIRouter()
 
 @query_router.post("/getData")
