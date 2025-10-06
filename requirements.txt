@@ -10,7 +10,6 @@ python-multipart
 openpyxl
 duckdb 
 pymupdf
-os
 beautifulsoup4
 requests
 python-docx            
