@@ -116,3 +116,7 @@ Upload a file and start using the client.
 
 **Step 11:**
 ngrok http 8000 --host-header=8000
+
+**step 12:**
+activate venv file
+D:\nlp\data_Analysis\.venv\Scripts\activate.bat

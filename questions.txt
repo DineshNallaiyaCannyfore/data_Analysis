@@ -1,0 +1,27 @@
+
+ 
+Extract the information from this url : https://en.wikipedia.org/wiki/India
+
+
+1.What is the capital city of India?
+
+2.Which ocean lies to the south of India?
+
+3.Who is the current Prime Minister of India (as of 2025)?
+
+4.How many states and union territories does India have?
+
+5.What is the national animal of India?
+
+6.Summary of sun
+--------
+
+Scrape the list of highest grossing films from Wikipedia. It is at the URL:
+https://en.wikipedia.org/wiki/List_of_highest-grossing_films
+
+Answer the following questions and respond with a JSON array of strings containing the answer.
+
+1. How many $2 bn movies were released before 2000?
+2. Which is the earliest film that grossed over $1.5 bn?
+3. What's the correlation between the Rank and Peak?
+4. Draw a scatterplot of Rank and Peak along with a dotted red regression line through it.

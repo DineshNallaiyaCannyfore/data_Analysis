@@ -1,20 +1,18 @@
 import tempfile
 import httpx
 import duckdb
-import numpy as np
 import pandas as pd
 import docx
 import re
+import fitz
 import os
 from typing import  List
 from fastapi import File, UploadFile
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.prompts import ChatPromptTemplate
-from langchain.chains import RetrievalQA
 from langchain_community.vectorstores.duckdb import DuckDB
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import Document 
@@ -23,6 +21,9 @@ import matplotlib.pyplot as plt
 import base64
 import io
 import easyocr
+from fastapi.responses import JSONResponse
+import asyncio
+from tqdm import tqdm
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 # Set Gemini key
@@ -43,34 +44,43 @@ async def extractText(files: List[UploadFile]) -> str:
             query_text += file_text
 
         elif suffix == "pdf":
+            file_text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(await f.read())
                 tmp_path = tmp.name
-            import fitz
             doc = fitz.open(tmp_path)
             file_text = "".join([page.get_text() for page in doc])
+            await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
 
         elif suffix in ["csv"]:
+            file_text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
                 tmp.write(await f.read())
                 tmp_path = tmp.name
             df = pd.read_csv(tmp_path)
             file_text = df.to_string()
+            await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
 
         elif suffix in ["xls", "xlsx"]:
+            file_text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(await f.read())
                 tmp_path = tmp.name
             df = pd.read_excel(tmp_path)
             file_text = df.to_string()
+            await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
 
         elif suffix in ["docx", "doc"]:
+            file_text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(await f.read())
                 tmp_path = tmp.name
             doc = docx.Document(tmp_path)
             file_text = "\n".join([para.text for para in doc.paragraphs])
+            await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
+
         elif suffix in ["jpg"]:
+            file_text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(await f.read())
                 tmp_path = tmp.name
@@ -78,10 +88,9 @@ async def extractText(files: List[UploadFile]) -> str:
                 result = reader.readtext(tmp_path)
                 texts = [res[1] for res in result]
                 print("imgText:", " ".join(texts))
-            file_text = "\n".join(texts)
+                await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
 
-        if suffix != "txt" :
-             await embed_chunks_in_memory_duckdb(file_text, f.filename, suffix)
+            file_text = "\n".join(texts)
 
     return {
             "query": query_text,
@@ -94,45 +103,62 @@ def getURLS(text):
     return urls
     
 async def extract_text_from_urls(url_list):
-    if url_list:  # checks if not empty
+    if url_list: 
         all_text = ""
         async with httpx.AsyncClient() as client:
             for url in url_list:
                 response = await client.get(url, timeout=10)
                 soup = BeautifulSoup(response.text, "html.parser")
-                text = " ".join([p.get_text() for p in soup.find_all("p")])
+                text = " ".join([p.get_text() for p in soup.find_all(["p","th","td"])])
                 all_text += text + "\n"
-        
+        print("all_text",len(all_text))
         await embed_chunks_in_memory_duckdb(all_text, 'webURLTest', 'txt')
         return all_text
 
-async def embed_chunks_in_memory_duckdb(text: str,metadata,type):
+async def embed_chunks_in_memory_duckdb(text: str, metadata: str, file_type: str):
     global VECTOR_STORE, CON
+
     try:
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200, add_start_index=True
+            chunk_size=1000,
+            chunk_overlap=200,
+            add_start_index=True
         )
         chunks = text_splitter.split_text(text)
         print(f"Split text into {len(chunks)} chunks")
-        metadata = {
-            "source": metadata,  
-            "file_type": type 
+        metadata_obj = {
+            "source": metadata,
+            "file_type": file_type
         }
-        documents = [Document(page_content=chunk,  metadata=metadata) for chunk in chunks]
-        # embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
+        documents = [
+            Document(page_content=chunk, metadata=metadata_obj)
+            for chunk in chunks
+        ]
         embedding_model = HuggingFaceEmbeddings(model_name="intfloat/e5-base-v2")
-        # embedding_model = HuggingFaceEmbeddings(model_name="intfloat/e5-large-v2")
+
         print("Embedding model loaded successfully")
+        
         if VECTOR_STORE is None:
-            VECTOR_STORE = DuckDB.from_documents(
-                documents=documents,
+            print("Initializing VECTOR_STORE...")
+            VECTOR_STORE = DuckDB(
+                connection=CON,
+                embedding=embedding_model,
+                table_name="documents"
+            )
+        batch_size = 300
+        for i in tqdm(range(0, len(documents), batch_size), desc="Embedding batches"):
+            batch = documents[i:i + batch_size]
+            await asyncio.to_thread(
+                DuckDB.from_documents,
+                documents=batch,
                 embedding=embedding_model,
                 connection=CON,
                 table_name="documents"
             )
-        else:
-            VECTOR_STORE.add_documents(documents)
+
+        print("VECTOR_STORE updated successfully")
         return VECTOR_STORE
+
     except Exception as e:
         return {
             "status": "error",
@@ -158,28 +184,48 @@ async def vector_search(query: str, k: int):
     ]
 
 async def generate_questions(query: str):
-    docs = await vector_search(query,30)
+    docs = await vector_search(query,10)
     context = "\n\n".join([d["content"] for d in docs])
+    print("context",len(context))
     prompt = ChatPromptTemplate.from_template("""
         You are an expert assistant.
-        Use the following context to answer the question.
-   
+        
         Context:
         {context}
-
         Question:
         {question}
-        If you find any chart, image on the question then return valid Python matplotlib code using "df",
-         
-        """)
+        
+        - Here is a sample Answer:
+          If the answer is not matched just send the actual error in Answer property
+            Eg:
+                ```json
+                 [{{
+                    "question": "How many $2 bn movies were released before 2000?",
+                    "Answer": "CRL MP(MD)/4399/2023 of Vinoth Vs The Inspector of Police"
+                 }}]
+            '''
+        - If the answer is not matched, just send the actual error in the Answer property.
+
+        - If the question involves a chart, graph, or visualization:
+        - First, return the JSON array of objects as above for textual answers.
+        - Then, in a **separate block**, return ONLY valid Python matplotlib code using "df" wrapped like this:
+        
+        ```python
+        # matplotlib code here
+        ```
+        - Do NOT return matplotlib code as a string inside JSON.
+        - Keep responses concise and based ONLY on the provided context.
+
+    """)
 
     chain = prompt | llm
     response = await chain.ainvoke({
         "context": context,
         "question": query
     })
+    print("-----response------",len(response.content))
     withImageRes = extract_and_generate_base64(response.content)
-    print("--------",withImageRes)
+    print("----withImageRes----",len(withImageRes))
     return withImageRes
 
 async def handleFileUpload(files: List[UploadFile] = File(...)) :
@@ -201,15 +247,15 @@ async def handleFileUpload(files: List[UploadFile] = File(...)) :
             "status": "200",
             "error": "Given file doesn't have data source, please attach url or other doc",
         }
+    print("urlResult",urlResult)
     webtext = await extract_text_from_urls(urlResult)
-    # doc = await vector_search(extractedText)
+    print("webtext",len(webtext))
     result = await generate_questions(extractedText)
-    # result = await generate_questions(extractedText,webtext)
+    print("-------result-",result)
     return {
         "status": "200",
-        "generated_answer": result
+        "generated_answer": str(result)
     }
-
 def extract_and_generate_base64(response_text):
     code_blocks = re.findall(r"```python(.*?)```", response_text, re.DOTALL)
 
