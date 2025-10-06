@@ -1,11 +1,21 @@
 version: 1
-description: "Test matplotlib-to-base64 API using Gemini Flash 2.5 via ngrok"
+description: "Test matplotlib-to-base64 API using Gemini Flash 2.5 and 2.0 via ngrok"
 
 providers:
   - id: google:gemini-2.5-flash
     config:
       apiKey: "AIzaSyAto7z8ff4DnyXMZQHYiU9ubu0lsrgwt-o"
-      url: "https://ca496522d2ce.ngrok-free.app/api/getData"
+      url: "https://fcf395e5b997.ngrok-free.app/api/getData"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        prompt: "{{prompt}}"
+
+  - id: google:gemini-2.0-flash
+    config:
+      apiKey: "AIzaSyAto7z8ff4DnyXMZQHYiU9ubu0lsrgwt-o"
+      url: "https://fcf395e5b997.ngrok-free.app/api/getData"
       method: POST
       headers:
         Content-Type: application/json
@@ -14,22 +24,25 @@ providers:
 
 tests:
   - vars:
-      prompt: "5.How did the partition of British India in 1947 affect the subcontinent?"
+      prompt: "What's the correlation between the Rank and Peak?"
     assert:
-      - type: contains
-        value: "independent nations"
+      - type: regex
+        value: ".*(0.723|0|none).*"
+
   - vars:
-      prompt: "6.Generate the char for demographic characteristics of India: using matplotlib code?"
+      prompt: "Draw a scatterplot of Rank and Peak along with a dotted red regression line through it"
     assert:
       - type: contains
         value: "python"
+
   - vars:
-      prompt: "7.Describe the Summary of candidate profile summary?"
+      prompt: "Which is the earliest film that grossed over $1.5 bn?"
     assert:
       - type: contains
-        value: "summary"
+        value: "Titanic"
+
   - vars:
-      prompt: "7.Give me the summary of the sun ?"
+      prompt: "How many $2 bn movies were released before 2000?"
     assert:
-      - type: contains
-        value: "solar system"
+      - type: regex
+        value: ".*(Zero|0|none|Titanic).*"
